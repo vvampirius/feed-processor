@@ -10,6 +10,7 @@ import (
 	"os"
 	"github.com/jaytaylor/html2text"
 	"github.com/vvampirius/feed-processor/email"
+	fpFeed "github.com/vvampirius/feed-processor/feed"
 )
 
 func makeMessage(item *gofeed.Item, from *mail.Address, to *mail.Address, prefix string) []byte {
@@ -110,13 +111,11 @@ func main() {
 		log.Printf("Got %d items\n", len(feed.Items))
 		log.Printf("Waiting items after: %v\n", after)
 
+		feed.Items = fpFeed.AfterFilter(feed.Items, after, log.New(os.Stdout, `AfterFilter `, 3))
+
 		for _, b := range feed.Items {
-			if b.PublishedParsed.After(after) {
-				// TODO: update title
-				updateTitle(b)
-				log.Printf("[%v] => %s\n", b.PublishedParsed, b.Title)
-				messages = append(messages, makeMessage(b, from, to, *prefixFlag))
-			} else { log.Printf("[%v] => skip\n", b.PublishedParsed) }
+			updateTitle(b)
+			messages = append(messages, makeMessage(b, from, to, *prefixFlag))
 		}
 
 		after = getNewAfterTime(after, feed.Items)
