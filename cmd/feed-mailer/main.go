@@ -11,6 +11,7 @@ import (
 	"github.com/jaytaylor/html2text"
 	"github.com/vvampirius/feed-processor/email"
 	fpFeed "github.com/vvampirius/feed-processor/feed"
+	"github.com/vvampirius/feed-processor/filterDSL"
 )
 
 func makeMessage(item *gofeed.Item, from *mail.Address, to *mail.Address, prefix string) []byte {
@@ -82,6 +83,7 @@ func main() {
 	userFlag := flag.String(`u`, os.Getenv(`SMTP_USERNAME`), `SMTP username`)
 	passwordFlag := flag.String(`p`, os.Getenv(`SMTP_PASSWORD`), `SMTP password`)
 	prefixFlag := flag.String(`q`, os.Getenv(`PREFIX`), `Prefix in mail subject`)
+	fdslFlag := flag.String(`k`, os.Getenv(`FDSL`), `Filter DSL filename`)
 	flag.Parse()
 
 	url := flag.Arg(0)
@@ -93,32 +95,42 @@ func main() {
 	to, err := mail.ParseAddress(*toFlag)
 	if err != nil { log.Panic(err) }
 
+	logger := log.New(os.Stdout, ``, 3)
+
+	fdsl := filterDSL.FilterDSL{FileName: *fdslFlag, FileTimestamp: time.Now()}
+	fdsl.Reload()
+	go fdsl.CheckUpdate()
+
 	after := getAfterTime(*afterFlag)
 
 	for true {
 		messages := make([][]byte, 0)
 
-		log.Printf("Fetching url %s\n", url)
+		logger.Printf("Fetching url %s\n", url)
 
 		fp := gofeed.NewParser()
 		feed, err := fp.ParseURL(url)
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			time.Sleep(time.Minute * 1)
 			continue
 		}
 
-		log.Printf("Got %d items\n", len(feed.Items))
-		log.Printf("Waiting items after: %v\n", after)
+		logger.Printf("Got %d items\n", len(feed.Items))
 
-		feed.Items = fpFeed.AfterFilter(feed.Items, after, log.New(os.Stdout, `AfterFilter `, 3))
+		feed.Items = fpFeed.AfterFilter(feed.Items, after, logger)
+
+		if regexpFilterPipeline, err := fdsl.RegexpFilterPipeline(url); err==nil {
+			feed.Items = fpFeed.TitleFilter(feed.Items, regexpFilterPipeline, logger)
+		} else { log.Printf("main: fdsl.RegexpFilterPipeline(%s) return error: %s\n", url, err.Error()) }
 
 		for _, b := range feed.Items {
 			updateTitle(b)
+			logger.Println(b.Title)
 			messages = append(messages, makeMessage(b, from, to, *prefixFlag))
 		}
 
-		after = getNewAfterTime(after, feed.Items)
+		after = getNewAfterTime(after, feed.Items) //TODO: поднять вверх, и встроить в AfterFilter функцию
 
 		if len(messages)>0 {
 			email.SendMessages(*hostPortFlag, *userFlag, *passwordFlag, from, to, messages)

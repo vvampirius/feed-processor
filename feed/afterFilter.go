@@ -15,7 +15,7 @@ func AfterFilter(items []*gofeed.Item, after time.Time, logger *log.Logger) []*g
 			filteredItems = append(filteredItems, item)
 			action = `add`
 		}
-		if logger != nil { logger.Printf("(%v :: %s) => %s\n", item.PublishedParsed, item.Title, action)}
+		if logger != nil { logger.Printf("AfterFilter: (%v :: %s) => %s\n", item.PublishedParsed, item.Title, action)}
 	}
 	return filteredItems
 }
